@@ -1,343 +1,173 @@
-Sub ImportAndOrganizeData()
-    Dim filePath As String
-    Dim textLine As String
-    Dim textData() As String
-    Dim i As Long, j As Long
-    Dim newWorkbook As Workbook
-    Dim ws As Worksheet
-    Dim itemNumber As String
-    Dim termDate As String
-    Dim orderQuantity As String
-    Dim reference As String
-    Dim yearWeek As String
-    Dim lastRow As Long
+import pandas as pd
+import os
+from tkinter import Tk, filedialog
+from tkinter.filedialog import askopenfilename
+from openpyxl import load_workbook, Workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.worksheet.dimensions import ColumnDimension, DimensionHolder
 
-    ' Prompt user to select CSV file
-    filePath = Application.GetOpenFilename("Text Files (*.csv),*.csv", , "Please select the file:")
-    
-    If filePath = "False" Then Exit Sub ' If user cancels, exit sub
-    
-    ' Create a new workbook
-    Set newWorkbook = Application.Workbooks.Add
-    Set ws = newWorkbook.Sheets(1)
-    
-    ' Set column headers
-    ws.Cells(1, 1).Value = "Item Number"
-    ws.Cells(1, 2).Value = "Term"
-    ws.Cells(1, 3).Value = "Order Quantity"
-    ws.Cells(1, 4).Value = "Reference"
-    ws.Cells(1, 5).Value = "Year-Week"
-    
-    ' Open file in input mode
-    Open filePath For Input As #1
-    
-    i = 2 ' Start at the second row because the first row is headers
-    Do Until EOF(1)
-        Line Input #1, textLine ' Read line from file
-        textLine = Replace(textLine, ";;", ";") ' Replace double semicolons with single
-        textData = Split(textLine, ";") ' Split the line into an array
-        
-        ' Reset variables for each line
-        itemNumber = ""
-        termDate = ""
-        orderQuantity = ""
+def get_year_week(date):
+    """Returns the ISO year-week string from a date."""
+    return f"{date.year}-{date.isocalendar().week:02d}"
+
+def custom_xlookup(value, lookup_df, lookup_column, return_column):
+    """Performs a lookup similar to Excel's XLOOKUP function."""
+    match = lookup_df[lookup_df[lookup_column] == value]
+    return match.iloc[0][return_column] if not match.empty else "N/A"
+
+def read_file(file_path):
+    """Reads a file based on its extension and returns a DataFrame."""
+    if file_path.endswith('.csv'):
+        return pd.read_csv(file_path, sep=';', header=None, dtype=str, skiprows=1)
+    elif file_path.endswith('.xlsx'):
+        return pd.read_excel(file_path)
+    else:
+        raise ValueError("Unsupported file format.")
+
+def write_file(df, file_path, is_csv=True):
+    """Writes a DataFrame to a file based on the specified format."""
+    if is_csv:
+        df.to_csv(file_path, index=False)
+    else:
+        df.to_excel(file_path, index=False)
+    print(f"Data organized and saved to {file_path}")
+
+def process_files(pingrm_file, codate_file):
+    """Processes the given PINGRM and CoDate2-x files."""
+    trim_and_filter_sheet(pingrm_file)
+    import_and_organize_data(codate_file)
+
+def trim_and_filter_sheet(pingrm_file):
+    """For PINGRM schedule files, trims and filters the data."""
+    print(f"Selected file: {pingrm_file}")
+
+
+
+    if pingrm_file.endswith('.csv'):
+        df = pd.read_csv(pingrm_file, sep=';', header=None, dtype=str, skiprows=1)
+    elif pingrm_file.endswith('.xlsx'):
+        df = pd.read_excel(pingrm_file)
+    else:
+        raise ValueError("Unsupported file format")
+
+    print("Original DataFrame:")
+    print(df.head())
+
+    if pingrm_file.endswith('.csv'):
+        df.replace(';;', ';', regex=True, inplace=True)
+        print("DataFrame after replacing double semicolons:")
+        print(df.head())
+
+    processed_data = []
+
+    for index, row in df.iterrows():
+        print(f"Processing row {index + 1}")
+
+        item_number = ""
+        term_date = ""
+        order_quantity = ""
         reference = ""
-        
-        ' Parse each segment in the line based on rules provided
-        For j = LBound(textData) To UBound(textData)
-            If Len(textData(j)) = 10 And Left(textData(j), 1) = "4" Then
-                itemNumber = textData(j)
-            ElseIf IsDate(textData(j)) And termDate = "" Then
-                termDate = textData(j)
-                yearWeek = Format(CDate(termDate), "yyyy") & "-" & Format(CDate(termDate), "ww")
-            ElseIf IsNumeric(textData(j)) And orderQuantity = "" And termDate <> "" Then
-                orderQuantity = textData(j)
-            ElseIf (Len(textData(j)) = 8 And Left(textData(j), 1) = "3") Or textData(j) = "forecast" Then
-                reference = textData(j)
-            End If
-        Next j
-        
-        ' Write the parsed data to the worksheet
-        ws.Cells(i, 1).Value = itemNumber
-        ws.Cells(i, 2).Value = termDate
-        ws.Cells(i, 3).Value = orderQuantity
-        ws.Cells(i, 4).Value = reference
-        ws.Cells(i, 5).Value = yearWeek
-        
-        i = i + 1 ' Move to next row
-    Loop
+        year_week = ""
+
+        for value in row:
+            if pd.notna(value):
+                if len(str(value)) == 10 and str(value).startswith('4'):
+                    item_number = str(value)
+                elif pd.to_datetime(value, errors='coerce') is not pd.NaT and term_date == "":
+                    term_date = pd.to_datetime(value).strftime('%d-%m-%Y')
+                    year_week = f"{pd.to_datetime(value).year}-{pd.to_datetime(value).isocalendar().week:02d}"
+                elif str(value).isnumeric() and order_quantity == "" and term_date != "":
+                    order_quantity = str(value)
+                elif (len(str(value)) == 8 and str(value).startswith('3')) or str(value) == "forecast":
+                    reference = str(value)
+
+        print(f"Parsed data: Item Number: {item_number}, Term Date: {term_date}, Order Quantity: {order_quantity}, Reference: {reference}, Year Week: {year_week}")
+
+        processed_data.append({
+            'Item Number': item_number,
+            'Term Date': term_date,
+            'Order Quantity': order_quantity,
+            'Reference': reference,
+            'Year Week': year_week
+        })
+
+    df = df.iloc[1:]  # Delete the second row of the DataFrame
+
+    processed_df = pd.DataFrame(processed_data)
+    print("Processed DataFrame:")
+    print(processed_df.head())
+
+    if os.path.exists('output.xlsx'):
+        excel_file = load_workbook('output.xlsx')
+    else:
+        excel_file = Workbook()
+        excel_file.remove(excel_file.active)
+
+    sheet = excel_file.create_sheet('Processed Data', index=0)
+    for row in dataframe_to_rows(processed_df, index=False, header=True):
+        sheet.append(row)
+
+    # Set all columns to a specific width
+    for column_cells in sheet.columns:
+        width = 18
+        for cell in column_cells:
+            sheet.column_dimensions[cell.column_letter].width = width
+
+    excel_file.save('output.xlsx')
+    print(f"Processed data saved to 'output.xlsx'")
+
+def import_and_organize_data(codate_file):
+    """Cleans and prepares the order book for further processing."""
+    # Read the CSV file, focusing only on the necessary columns
+    df = pd.read_csv(codate_file, usecols=[
+        'CustID', 'CustomerPONumber', 'CONumber', 'COLineNumber', 
+        'ItemNumber', 'ItemDescription', 'CustomerItemNumber', 
+        'ItemOrderedQuantity', 'OPEN_QTY', 'PromisedDlvryDate'
+    ])
     
-    Close #1 ' Close file
+    # Renaming columns to match the expected names
+    df.rename(columns={
+        'COLineNumber': 'Ln',
+        'ItemNumber': 'Item Number',
+        'ItemDescription': 'Item Description',
+        'CustomerItemNumber': 'Cust Item Number',
+        'ItemOrderedQuantity': 'OrderQty',  # Updated based on CSV header
+        'OPEN_QTY': 'Open Qty',  # Updated based on CSV header
+        'PromisedDlvryDate': 'PromDlvry'  # Updated based on CSV header
+    }, inplace=True)
     
-    ' Remove any completely blank rows as a failsafe
-    For i = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row To 2 Step -1
-        If Application.CountA(ws.Rows(i)) = 0 Then
-            ws.Rows(i).Delete
-        End If
-    Next i
+    # Convert 'PromDlvry' to datetime format and compute 'Year-Week'
+    try:
+        df['PromDlvry'] = pd.to_datetime(df['PromDlvry'], format='%d-%b-%Y')
+        df["Year-Week"] = df['PromDlvry'].apply(get_year_week)
+    except Exception as e:
+        print(f"Error converting 'PromDlvry' to datetime or computing 'Year-Week': {e}")
+        return df
 
-    ' Find the last row with data after clean-up
-    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
-    
-    If lastRow > 1 Then
-        ' There is data present, so we can convert the range to a Table
-        Dim table As ListObject
-        Set table = ws.ListObjects.Add(SourceType:=xlSrcRange, Source:=ws.Range("A1:E" & lastRow), XlListObjectHasHeaders:=xlYes)
-        table.Name = "DataTable"
-        table.TableStyle = "TableStyleMedium9"
-        
-        ' Center everything in the table
-        table.Range.HorizontalAlignment = xlCenter
-        table.Range.VerticalAlignment = xlCenter
-        
-        ' Apply filters to the top row
-        ws.Range("A1:E1").AutoFilter
-    Else
-        MsgBox "No data was found to format as a table and apply filters.", vbExclamation
-    End If
-    
-    ' Optimize the view
-    ws.Columns("A:E").AutoFit
+    # Initialize 'Match PING?' column with default values
+    df['Match PING?'] = ''  # Placeholder for future data
 
-    ' Activate the new workbook
-    newWorkbook.Activate
-End Sub
+    # Sort the DataFrame by 'Year-Week'
+    df.sort_values('Year-Week', inplace=True)
 
+    # Creating the filename for the output file
+    output_filename = "organized_" + os.path.basename(codate_file).replace('.xlsx', '').replace('.csv', '') + "_new" + ('.xlsx' if codate_file.endswith('.xlsx') else '.csv')
+    write_file(df, output_filename, is_csv=codate_file.endswith('.csv'))
 
-Function GetYearWeek(ByVal targetDate As Date) As String
-    Dim weekNum As Integer
-    weekNum = DatePart("ww", targetDate, vbMonday, vbFirstFourDays)
-    GetYearWeek = Year(targetDate) & "-" & Format(weekNum, "00")
-End Function
+def select_files():
+    """Allows user to select PINGRM and CoDate2-x files for processing."""
+    root = Tk()
+    root.attributes('-fullscreen', True)  # Set the root window to fullscreen
+    pingrm_file = filedialog.askopenfilename(title='Select PINGRM schedule file', filetypes=[('CSV Files', '*.csv'), ('Excel files', '*.xlsx')])
+    codate_file = filedialog.askopenfilename(title='Select CoDate2-x file', filetypes=[('CSV Files', '*.csv'), ('Excel files', '*.xlsx')])
 
-Function CustomXLookup(lookupValue As String, lookupArray As Range, returnArray As Range) As Variant
-    Dim matchFound As Boolean
-    matchFound = False
-    Dim i As Long
-    For i = 1 To lookupArray.Cells.Count
-        If lookupArray.Cells(i).Value = lookupValue Then
-            CustomXLookup = returnArray.Cells(i).Value
-            matchFound = True
-            Exit For
-        End If
-    Next i
-    If Not matchFound Then CustomXLookup = "N/A"
-End Function
+    if not pingrm_file or not codate_file:
+        print("File selection cancelled.")
+        return
 
-Sub UpdateWorksheets()
-    On Error GoTo ErrorHandler
-    Dim wsHF As Worksheet, wsPINGRM As Worksheet, wsSummary As Worksheet
-    Dim lastRow As Long, i As Long
-    Dim yearWeek As String, itemYearWeek As String
-    Dim matchPING As String, matchHF As String, CO As String
+    process_files(pingrm_file, codate_file)
 
-    Debug.Print "UpdateWorksheets started at " & Now
-
-    Set wsHF = ThisWorkbook.Sheets("HF Sheet")
-    Debug.Print "wsHF set to 'HF Sheet'"
-
-    Set wsPINGRM = ThisWorkbook.Sheets("PINGRM's Sheet")
-    Debug.Print "wsPINGRM set to 'PINGRM's Sheet'"
-
-    Set wsSummary = ThisWorkbook.Sheets("Summary Sheet")
-    Debug.Print "wsSummary set to 'Summary Sheet'"
-
-    ' Update HF Sheet
-    lastRow = wsHF.Cells(wsHF.Rows.Count, "A").End(xlUp).Row
-    Debug.Print "Updating HF Sheet, last row: " & lastRow
-
-    For i = 2 To lastRow ' Assuming row 1 has headers
-        yearWeek = GetYearWeek(wsHF.Cells(i, "PromDlvry").Value)
-        wsHF.Cells(i, "Year-Week").Value = yearWeek
-        itemYearWeek = wsHF.Cells(i, "Item Number").Value & yearWeek
-        matchPING = CustomXLookup(itemYearWeek, wsPINGRM.Columns("Ref"), wsPINGRM.Columns("Match?"))
-        wsHF.Cells(i, "Match PING?").Value = matchPING
-        Debug.Print "Row " & i & ": Year-Week updated to " & yearWeek & "; Match PING? updated to " & matchPING
-    Next i
-
-    Debug.Print "Update on HF Sheet completed."
-
-    ' TODO: Insert logic to update PINGRM's Sheet here...
-    ' TODO: Insert logic to update Summary Sheet here...
-
-    Debug.Print "UpdateWorksheets completed at " & Now
-    Exit Sub
-
-ErrorHandler:
-    Debug.Print "Error encountered: " & Err.Description & " (Error " & Err.Number & ")"
-    MsgBox "An error occurred: " & Err.Description, vbCritical, "Error " & Err.Number
-    Resume Next
-End Sub
-
-Sub TrimAndFilterSheet()
-    Dim ws As Worksheet
-    Dim wb As Workbook
-    Dim fd As FileDialog
-    Dim selectedFile As String
-    Dim lastRow As Long
-    Dim col As Range, delCols As Range
-    Dim requiredColumns As Variant
-    Dim found As Boolean
-    Dim i As Long, j As Long
-
-    ' Create and configure the FileDialog object
-    Set fd = Application.FileDialog(msoFileDialogOpen)
-    With fd
-        .AllowMultiSelect = False
-        .Title = "Select the Excel file"
-        .Filters.Clear
-        .Filters.Add "Excel files", "*.xlsx; *.xls; *.xlsm"
-        
-        ' Show the dialog box to the user
-        If .Show = True Then
-            selectedFile = .SelectedItems(1)
-        Else
-            ' Exit the subroutine if no file is selected
-            MsgBox "No file selected.", vbExclamation
-            Exit Sub
-        End If
-    End With
-
-    ' Open the selected workbook
-    Set wb = Workbooks.Open(selectedFile)
-    ' Prompt the user to enter the sheet name or select from list
-    Set ws = wb.Sheets(1) ' ERROR: OBJECT REQUIRED
-
-    requiredColumns = Array("CustID", "Customer PONumber", "CONumber", "Ln", "Item Number", "Item Description", "Cust Item Number", "OrderQty", "Open Qty", "PromDlvry")
-    
-    ' Delete non-required columns
-    Application.ScreenUpdating = False
-    For i = ws.UsedRange.Columns.Count To 1 Step -1
-        found = False
-        For j = LBound(requiredColumns) To UBound(requiredColumns)
-            If ws.Cells(1, i).Value = requiredColumns(j) Then
-                found = True
-                Exit For
-            End If
-        Next j
-        If Not found Then
-            If delCols Is Nothing Then
-                Set delCols = ws.Columns(i)
-            Else
-                Set delCols = Union(delCols, ws.Columns(i))
-            End If
-        End If
-    Next i
-    If Not delCols Is Nothing Then delCols.Delete
-    
-     ' Add Year-Week and Match PING? columns
-    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
-    With ws
-        .Cells(1, .UsedRange.Columns.Count + 1).Value = "Year-Week"
-        .Cells(1, .UsedRange.Columns.Count + 2).Value = "Match PING?"
-    
-        ' Clear any existing filters before applying a new one
-        .AutoFilterMode = False
-        .Range("A1").AutoFilter Field:=1, Criteria1:="PINGRM"
-    End With
-    
-    Application.ScreenUpdating = True
-    wb.Save ' Optionally save the workbook
-    wb.Close ' Close the workbook
-
-End Sub
-
-Sub ImportAndOrganizePINGRMData()
-    Dim filePath As String
-    Dim textLine As String
-    Dim textData() As String
-    Dim i As Long, j As Long
-    Dim newWorkbook As Workbook
-    Dim ws As Worksheet
-    Dim itemNumber As String
-    Dim termDate As String
-    Dim orderQuantity As String
-    Dim reference As String
-    Dim yearWeek As String
-    Dim lastRow As Long
-
-    ' Prompt user to select CSV file
-    filePath = Application.GetOpenFilename("Text Files (*.csv),*.csv", , "Please select the file:")
-    If filePath = "False" Then Exit Sub ' If user cancels, exit sub
-    
-    ' Create a new workbook and setup worksheet
-    Set newWorkbook = Application.Workbooks.Add
-    Set ws = newWorkbook.Sheets(1)
-    ws.Cells(1, 1).Value = "Item Number"
-    ws.Cells(1, 2).Value = "Term"
-    ws.Cells(1, 3).Value = "Order Quantity"
-    ws.Cells(1, 4).Value = "Reference"
-    ws.Cells(1, 5).Value = "Year-Week"
-    
-    ' Open file and read data
-    Open filePath For Input As #1
-    i = 2 ' Start from the second row for data entries
-    Do Until EOF(1)
-        Line Input #1, textLine
-        textLine = Replace(textLine, ";;", ";") ' Handle double semicolons
-        textData = Split(textLine, ";") ' Split data into array
-        
-        ' Reset variables for new line
-        itemNumber = ""
-        termDate = ""
-        orderQuantity = ""
-        reference = ""
-        
-        ' Parse and assign data based on conditions
-        For j = LBound(textData) To UBound(textData)
-            Select Case True
-                Case Len(textData(j)) = 10 And Left(textData(j), 1) = "4"
-                    itemNumber = textData(j)
-                Case IsDate(textData(j)) And termDate = ""
-                    termDate = textData(j)
-                    yearWeek = Format(CDate(termDate), "yyyy") & "-" & Format(CDate(termDate), "ww")
-                Case IsNumeric(textData(j)) And orderQuantity = "" And termDate <> ""
-                    orderQuantity = textData(j)
-                Case (Len(textData(j)) = 8 And Left(textData(j), 1) = "3") Or textData(j) = "forecast"
-                    reference = textData(j)
-            End Select
-        Next j
-        
-        ' Write parsed data to the worksheet
-        ws.Cells(i, 1).Value = itemNumber
-        ws.Cells(i, 2).Value = termDate
-        ws.Cells(i, 3).Value = orderQuantity
-        ws.Cells(i, 4).Value = reference
-        ws.Cells(i, 5).Value = yearWeek
-        i = i + 1
-    Loop
-    Close #1 ' Close file after reading
-    
-    ' Find the last row with data after clean-up
-    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
-    
-    If lastRow > 1 Then
-    ' There is data present, so we can convert the range to a Table
-        Dim table As ListObject
-        Set table = ws.ListObjects.Add(SourceType:=xlSrcRange, Source:=ws.Range("A1:E" & lastRow), XlListObjectHasHeaders:=xlYes)
-        table.Name = "DataTable"
-        table.TableStyle = "TableStyleMedium9"
-        
-        ' Center everything in the table
-        table.Range.HorizontalAlignment = xlCenter
-        table.Range.VerticalAlignment = xlCenter
-        
-        ' Apply filters to the top row
-        ws.Range("A1:E1").AutoFilter
-    Else
-        MsgBox "No data was found to format as a table and apply filters.", vbExclamation
-    End If
-        
-    ' Optimize column widths and activate the workbook
-    ws.Columns("A:E").AutoFit
-    newWorkbook.Activate
-End Sub
+if __name__ == "__main__":
+    select_files()
 
 
-Sub ShowMyUserForm()
-    UserForm1.Show
-End Sub
-
-'Flow of the program - User presses button, which opens a user form - then they press the button to upload there CIMT sheet, then they press another button to upload there RAW PINGRM sheet.
-' Then the program cuts the columns its doenst need from the CIMT sheet then runs the Sub ImportAndOrganizeData().
-' The CIMT summarised sheet should go into the first sheet and the Summarised PINGRM sheet should go into the second sheet all in a new workbook.
