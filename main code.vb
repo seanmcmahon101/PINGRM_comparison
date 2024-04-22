@@ -125,28 +125,48 @@ Function CustomXLookup(lookupValue As String, lookupArray As Range, returnArray 
 End Function
 
 Sub UpdateWorksheets()
+    On Error GoTo ErrorHandler
     Dim wsHF As Worksheet, wsPINGRM As Worksheet, wsSummary As Worksheet
     Dim lastRow As Long, i As Long
     Dim yearWeek As String, itemYearWeek As String
     Dim matchPING As String, matchHF As String, CO As String
-    
+
+    Debug.Print "UpdateWorksheets started at " & Now
+
     Set wsHF = ThisWorkbook.Sheets("HF Sheet")
+    Debug.Print "wsHF set to 'HF Sheet'"
+
     Set wsPINGRM = ThisWorkbook.Sheets("PINGRM's Sheet")
+    Debug.Print "wsPINGRM set to 'PINGRM's Sheet'"
+
     Set wsSummary = ThisWorkbook.Sheets("Summary Sheet")
-    
+    Debug.Print "wsSummary set to 'Summary Sheet'"
+
     ' Update HF Sheet
     lastRow = wsHF.Cells(wsHF.Rows.Count, "A").End(xlUp).Row
+    Debug.Print "Updating HF Sheet, last row: " & lastRow
+
     For i = 2 To lastRow ' Assuming row 1 has headers
         yearWeek = GetYearWeek(wsHF.Cells(i, "PromDlvry").Value)
         wsHF.Cells(i, "Year-Week").Value = yearWeek
-        itemYearWeek = wsHF.Cells(i, "Item Number").Value & wsHF.Cells(i, "Year-Week").Value
+        itemYearWeek = wsHF.Cells(i, "Item Number").Value & yearWeek
         matchPING = CustomXLookup(itemYearWeek, wsPINGRM.Columns("Ref"), wsPINGRM.Columns("Match?"))
         wsHF.Cells(i, "Match PING?").Value = matchPING
+        Debug.Print "Row " & i & ": Year-Week updated to " & yearWeek & "; Match PING? updated to " & matchPING
     Next i
-    
-    ' Update PINGRM's Sheet (similar logic applied)
-    
-    ' Update Summary Sheet (similar logic applied)
+
+    Debug.Print "Update on HF Sheet completed."
+
+    ' TODO: Insert logic to update PINGRM's Sheet here...
+    ' TODO: Insert logic to update Summary Sheet here...
+
+    Debug.Print "UpdateWorksheets completed at " & Now
+    Exit Sub
+
+ErrorHandler:
+    Debug.Print "Error encountered: " & Err.Description & " (Error " & Err.Number & ")"
+    MsgBox "An error occurred: " & Err.Description, vbCritical, "Error " & Err.Number
+    Resume Next
 End Sub
 
 Sub TrimAndFilterSheet()
@@ -181,7 +201,7 @@ Sub TrimAndFilterSheet()
     ' Open the selected workbook
     Set wb = Workbooks.Open(selectedFile)
     ' Prompt the user to enter the sheet name or select from list
-    Set ws = wb.Sheets(InputBox("Please enter the name of the sheet to process:", "Sheet Name"))
+    Set ws = wb.Sheets(1) ' ERROR: OBJECT REQUIRED
 
     requiredColumns = Array("CustID", "Customer PONumber", "CONumber", "Ln", "Item Number", "Item Description", "Cust Item Number", "OrderQty", "Open Qty", "PromDlvry")
     
@@ -205,20 +225,21 @@ Sub TrimAndFilterSheet()
     Next i
     If Not delCols Is Nothing Then delCols.Delete
     
-    ' Add Year-Week and Match PING? columns
+     ' Add Year-Week and Match PING? columns
     lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
     With ws
         .Cells(1, .UsedRange.Columns.Count + 1).Value = "Year-Week"
-        .Cells(1, .UsedRange.Columns.Count + 1).Value = "Match PING?"
+        .Cells(1, .UsedRange.Columns.Count + 2).Value = "Match PING?"
+    
+        ' Clear any existing filters before applying a new one
+        .AutoFilterMode = False
+        .Range("A1").AutoFilter Field:=1, Criteria1:="PINGRM"
     End With
-
-    ' Filter for CustID = 'PINGRM'
-    .AutoFilterMode = False
-    .Range("A1").AutoFilter Field:=1, Criteria1:="PINGRM"
     
     Application.ScreenUpdating = True
     wb.Save ' Optionally save the workbook
     wb.Close ' Close the workbook
+
 End Sub
 
 Sub ImportAndOrganizePINGRMData()
