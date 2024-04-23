@@ -1,0 +1,59 @@
+import pandas as pd
+import tkinter as tk
+from tkinter import filedialog
+from openpyxl import Workbook
+
+def select_file():
+    """Opens a file dialog to select a file and returns the file path."""
+    root = tk.Tk()
+    root.withdraw()  # Hide the main window
+    file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xls *.xlsx")])
+    return file_path
+
+def import_and_organize_data():
+    codate_file = select_file()
+    if not codate_file:
+        print("No file selected.")
+        return
+
+    print(f"Selected file: {codate_file}")
+
+    if codate_file.endswith('.xlsx'):
+        engine = 'openpyxl'
+    elif codate_file.endswith('.xls'):
+        engine = 'xlrd'
+    else:
+        print("Unsupported file format: Please select an Excel (.xls or .xlsx) file.")
+        return
+
+    df = pd.read_excel(codate_file, engine=engine, usecols=[
+        'CustID', 'Customer PONumber', 'CONumber', 'Ln', 
+        'Item Number', 'Item Description', 'Cust Item Number', 
+        'OrderQty', 'Open Qty', 'PromDlvry'
+    ])
+    df['PromDlvry'] = pd.to_datetime(df['PromDlvry'], errors='coerce')
+    df["Year-Week"] = df['PromDlvry'].dt.strftime('%Y-%U')
+    df.sort_values('Year-Week', inplace=True)
+    
+    print("Data successfully organized and sorted by Year-Week.")
+
+    # Export to a new Excel sheet
+    output_workbook = Workbook()
+    output_sheet = output_workbook.active
+    output_sheet.title = "Organized Data"
+    
+    # Writing the headers
+    for col, header in enumerate(df.columns, start=1):
+        output_sheet.cell(row=1, column=col, value=header)
+
+    # Writing the data
+    for idx, row in df.iterrows():
+        for col, value in enumerate(row, start=1):
+            output_sheet.cell(row=idx+2, column=col, value=value)
+
+    output_filename = 'Organized_Data.xlsx'
+    output_workbook.save(output_filename)
+    print(f"Data exported to {output_filename}")
+
+# To run the function, simply call it
+import_and_organize_data()
