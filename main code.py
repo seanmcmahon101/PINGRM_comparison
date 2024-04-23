@@ -73,6 +73,9 @@ def process_import_and_organize():
     df['PromDlvry'] = pd.to_datetime(df['PromDlvry'], errors='coerce')
     df["Year-Week"] = df['PromDlvry'].dt.strftime('%Y-%U')
     df.sort_values('Year-Week', inplace=True)
+    
+    df = df[df['CustID'] == 'PINGRM']  # Filter 'CustID' for 'PINGRM'
+    
     return df
 
 def export_data():
@@ -85,7 +88,7 @@ def export_data():
 
     workbook = Workbook()
     ws1 = workbook.active
-    ws1.title = "Trimmed and Filtered Data"
+    ws1.title = "PINGRM"
 
     for r_idx, row in enumerate(df1.itertuples(index=False), start=2):
         for c_idx, value in enumerate(row, start=1):
@@ -93,7 +96,10 @@ def export_data():
     for c_idx, col in enumerate(df1.columns, start=1):
         ws1.cell(row=1, column=c_idx, value=col)
 
-    ws2 = workbook.create_sheet("Organized Data")
+    # Delete the second row
+    ws1.delete_rows(2)
+
+    ws2 = workbook.create_sheet("HF")
     for r_idx, row in enumerate(df2.itertuples(index=False), start=2):
         for c_idx, value in enumerate(row, start=1):
             ws2.cell(row=r_idx, column=c_idx, value=value)
@@ -101,8 +107,14 @@ def export_data():
         ws2.cell(row=1, column=c_idx, value=col)
 
     output_filename = 'Processed_Data.xlsx'
+    counter = 1
+    while os.path.exists(output_filename):
+        output_filename = f'Processed_Data_{counter}.xlsx'
+        counter += 1
+
     workbook.save(output_filename)
     print(f"Data exported to {output_filename}")
+    return workbook
 
 # To run the entire process, simply call export_data()
 export_data()
