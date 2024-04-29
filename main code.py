@@ -1,9 +1,11 @@
 import pandas as pd
 import os
 from datetime import datetime
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 import tkinter as tk
 from tkinter import filedialog
+from openpyxl.worksheet.table import Table, TableStyleInfo
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 def select_file(file_description="Excel files", extensions="*.xls *.xlsx"):
     """Opens a file dialog to select a file and returns the file path."""
@@ -96,15 +98,14 @@ def export_data():
     for c_idx, col in enumerate(df1.columns, start=1):
         ws1.cell(row=1, column=c_idx, value=col)
 
-    # Delete the second row
-    ws1.delete_rows(2)
-
     ws2 = workbook.create_sheet("HF")
     for r_idx, row in enumerate(df2.itertuples(index=False), start=2):
         for c_idx, value in enumerate(row, start=1):
             ws2.cell(row=r_idx, column=c_idx, value=value)
     for c_idx, col in enumerate(df2.columns, start=1):
         ws2.cell(row=1, column=c_idx, value=col)
+
+    add_summary_sheet(workbook)
 
     output_filename = 'Processed_Data.xlsx'
     counter = 1
@@ -115,6 +116,43 @@ def export_data():
     workbook.save(output_filename)
     print(f"Data exported to {output_filename}")
     return workbook
+
+def add_summary_sheet(workbook):
+    ws_pingrm = workbook["PINGRM"]
+    ws_hf = workbook["HF"]
+    ws_summary = workbook.create_sheet("Summary")
+    ws_summary.append(["Reference", "Year Week (PINGRM)", "Year-Week (HF)", "Date Change Detected"])
+
+    # Convert sheets to DataFrames
+    df_pingrm = pd.DataFrame([cell.value for cell in row] for row in ws_pingrm.iter_rows(min_row=2))
+    df_hf = pd.DataFrame([cell.value for cell in row] for row in ws_hf.iter_rows(min_row=2))
+    df_pingrm.columns = ["Item Number", "Term Date", "Order Quantity", "Reference", "Year Week"]
+    df_hf.columns = ["CustID", "Customer PONumber", "CONumber", "Ln", "Item Number", "Item Description", "Cust Item Number", "OrderQty", "Open Qty", "PromDlvry", "Year-Week"]
+
+    # Sort 'HF' DataFrame by 'CONumber' from newest to oldest if it is a date or numeric
+    df_hf['CONumber'] = pd.to_numeric(df_hf['CONumber'], errors='coerce')  # Ensure 'CONumber' is treated as numeric for sorting
+    df_hf = df_hf.sort_values(by='CONumber', ascending=False)
+
+    # Append data to summary sheet and check for changes
+    for index, row in df_pingrm.iterrows():
+        reference = row['Reference']
+        year_week_pingrm = row['Year Week']
+        matching_rows = df_hf[df_hf['Customer PONumber'] == reference]
+        year_week_hf = matching_rows['Year-Week'].iloc[0] if not matching_rows.empty else "No match found"
+        date_change = "No" if year_week_pingrm == year_week_hf else "Yes" if not matching_rows.empty else "Reference not found"
+        ws_summary.append([reference, year_week_pingrm, year_week_hf, date_change])
+
+    # Convert the Summary data to a table for better formatting and usability
+    tab = Table(displayName="SummaryTable", ref=ws_summary.dimensions)
+    style = TableStyleInfo(name="TableStyleMedium9", showFirstColumn=False,
+                           showLastColumn=False, showRowStripes=True, showColumnStripes=True)
+    tab.tableStyleInfo = style
+    ws_summary.add_table(tab)
+
+# Usage example (the workbook should already be loaded with 'PINGRM' and 'HF' data):
+# workbook = load_workbook('Processed_Data.xlsx')
+# add_summary_sheet(workbook)
+# workbook.save('Processed_Data_with_Summary.xlsx')
 
 # To run the entire process, simply call export_data()
 export_data()
