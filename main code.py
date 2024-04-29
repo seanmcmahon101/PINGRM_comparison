@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import filedialog
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.utils.dataframe import dataframe_to_rows
+from plyer import notification
 
 def select_file(file_description="Excel files", extensions="*.xls *.xlsx"):
     """Opens a file dialog to select a file and returns the file path."""
@@ -113,8 +114,23 @@ def export_data():
         output_filename = f'Processed_Data_{counter}.xlsx'
         counter += 1
 
-    workbook.save(output_filename)
-    print(f"Data exported to {output_filename}")
+    try:
+        workbook.save(output_filename)
+        full_path = os.path.abspath(output_filename)
+        print(f"Data exported to {full_path}")
+        notification.notify(
+            title='Export Complete',
+            message=f'Data successfully exported to {full_path}',
+            app_name='Data Exporter'
+        )
+    except Exception as e:
+        print(f"Failed to save the file: {str(e)}")
+        notification.notify(
+            title='Export Failed',
+            message=f'Failed to export data: {str(e)}',
+            app_name='Data Exporter'
+        )
+
     return workbook
 
 def add_summary_sheet(workbook):
