@@ -121,7 +121,7 @@ def add_summary_sheet(workbook):
     ws_pingrm = workbook["PINGRM"]
     ws_hf = workbook["HF"]
     ws_summary = workbook.create_sheet("Summary")
-    ws_summary.append(["Reference", "Year Week (PINGRM)", "Year-Week (HF)", "Date Change Detected"])
+    ws_summary.append(["Item Number", "Reference", "Year Week (PINGRM)", "Year-Week (HF)", "Date Change Detected"])
 
     # Convert sheets to DataFrames
     df_pingrm = pd.DataFrame([cell.value for cell in row] for row in ws_pingrm.iter_rows(min_row=2))
@@ -135,12 +135,13 @@ def add_summary_sheet(workbook):
 
     # Append data to summary sheet and check for changes
     for index, row in df_pingrm.iterrows():
+        item_number = row['Item Number']
         reference = row['Reference']
         year_week_pingrm = row['Year Week']
         matching_rows = df_hf[df_hf['Customer PONumber'] == reference]
         year_week_hf = matching_rows['Year-Week'].iloc[0] if not matching_rows.empty else "No match found"
         date_change = "No" if year_week_pingrm == year_week_hf else "Yes" if not matching_rows.empty else "Reference not found"
-        ws_summary.append([reference, year_week_pingrm, year_week_hf, date_change])
+        ws_summary.append([item_number, reference, year_week_pingrm, year_week_hf, date_change])
 
     # Convert the Summary data to a table for better formatting and usability
     tab = Table(displayName="SummaryTable", ref=ws_summary.dimensions)
@@ -149,10 +150,6 @@ def add_summary_sheet(workbook):
     tab.tableStyleInfo = style
     ws_summary.add_table(tab)
 
-# Usage example (the workbook should already be loaded with 'PINGRM' and 'HF' data):
-# workbook = load_workbook('Processed_Data.xlsx')
-# add_summary_sheet(workbook)
-# workbook.save('Processed_Data_with_Summary.xlsx')
-
 # To run the entire process, simply call export_data()
 export_data()
+
